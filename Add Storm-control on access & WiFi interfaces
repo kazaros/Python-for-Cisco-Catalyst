@@ -1,0 +1,81 @@
+#!/usr/bin/python
+from netmiko import ConnectHandler
+from ciscoconfparse import CiscoConfParse
+import os, sys, stat
+import diffios
+from pprint import pprint
+
+device1 = { 
+    'device_type': 'cisco_ios',
+    'ip': '10.77.25.35',
+    'username': 'XXXX',
+    'password': 'YYYYY',
+}
+
+device2 = { 
+    'device_type': 'cisco_ios',
+    'ip': '10.77.25.22',
+    'username': 'XXXX',
+    'password': 'YYYYY',
+}
+
+device3 = { 
+    'device_type': 'cisco_ios',
+    'ip': '10.77.25.25',
+    'username': 'XXXX',
+    'password': 'YYYYY',
+}
+
+
+
+all_devices = [device1,device2,device3]
+
+for device in all_devices:
+    net_connect = ConnectHandler(**device)
+    net_connect.enable()
+    prompt = net_connect.find_prompt()
+    hostname = net_connect.send_command('show run | i hostname i907swcc')
+    hostname.split(" ")
+    hostname.split(" ")
+    col1,col2 = hostname.split(" ")
+    filename = col2
+    showrun = net_connect.send_command('show run')
+    log_file = open(filename, "a")
+    log_file.write(showrun)
+    log_file.write("\n")
+    #log_file.write(showrun)
+    #log_file.write("\n")
+    os.chmod(col2, stat.S_IRWXU)     #add rights to execute
+    parse = CiscoConfParse(col2)
+    all_intfs = parse.find_objects(r"^interf")
+    trunk_intfs = list()
+    for obj in all_intfs:
+      if obj.re_search_children(r"description\sLink_to_WiFi"):
+         trunk_intfs.append(obj)
+    for obj in trunk_intfs:
+       obj.append_to_family(' storm-control broadcast level bps 10m 8m')
+       obj.append_to_family(' storm-control multicast level bps 10m 8m')
+       obj.append_to_family(' storm-control action trap')
+    access_intfs = list()
+    for obj in all_intfs:
+      if obj.re_search_children(r"switchport\smode\saccess"):
+         access_intfs.append(obj)
+    for obj in access_intfs:
+       obj.append_to_family(' storm-control broadcast level bps 10m 8m')
+       obj.append_to_family(' storm-control multicast level bps 10m 8m')
+       obj.append_to_family(' storm-control action trap')
+       # for line in parse.ioscfg:
+       #   print line
+    col3=(col2+'-Diff_config')
+    col4=(col2+'-Diff_commands')
+    parse.save_as(col3)
+    baseline = col2
+    comparison = col3
+    diff = diffios.Compare(baseline, comparison)
+    #print col2
+    print(diff.pprint_additional())
+    print("--------- End ---------")
+    number_file = open(col4, 'w')
+    number_file.write(diff.pprint_additional())
+    number_file.close()
+    net_connect.send_config_from_file(col4)  #upload new config in switch
